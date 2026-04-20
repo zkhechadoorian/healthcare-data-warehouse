@@ -402,6 +402,12 @@ ON CONFLICT (clm_id, segment) DO NOTHING;
 --          loaded into a single staging table, so dedup is important here.
 -- =============================================================================
 
+WITH deduped AS (
+    SELECT DISTINCT ON (clm_id, clm_line_num)
+        *
+    FROM staging.carrier_claims
+    ORDER BY clm_id, clm_line_num
+)
 INSERT INTO silver.carrier_claims (
     clm_id, clm_line_num, desynpuf_id,
     clm_from_dt, clm_thru_dt,
@@ -413,7 +419,7 @@ INSERT INTO silver.carrier_claims (
     line_place_of_srvc_cd, line_clm_rsn_cd,
     _loaded_at, _row_hash
 )
-SELECT DISTINCT ON (clm_id, clm_line_num)
+SELECT
     clm_id,
     silver.safe_smallint(clm_line_num)                       AS clm_line_num,
     desynpuf_id,
@@ -446,8 +452,7 @@ SELECT DISTINCT ON (clm_id, clm_line_num)
         clm_pmt_amt, line_hcpcs_cd, line_icd9_dgns_cd
     )::TEXT)                                                 AS _row_hash
 
-FROM staging.carrier_claims
-ORDER BY clm_id, clm_line_num
+FROM deduped
 ON CONFLICT (clm_id, clm_line_num) DO NOTHING;
 
 
@@ -458,6 +463,12 @@ ON CONFLICT (clm_id, clm_line_num) DO NOTHING;
 --          The CHECK constraint allows fill_dt < srvc_dt or either being NULL.
 -- =============================================================================
 
+WITH deduped AS (
+    SELECT DISTINCT ON (pde_id)
+        *
+    FROM staging.prescription_drug_events
+    ORDER BY pde_id
+)
 INSERT INTO silver.prescription_drug_events (
     pde_id, desynpuf_id,
     srvc_dt, fill_dt,
@@ -469,7 +480,7 @@ INSERT INTO silver.prescription_drug_events (
     nch_pde_bene_resp_amt,
     _loaded_at, _row_hash
 )
-SELECT DISTINCT ON (pde_id)
+SELECT
     pde_id,
     desynpuf_id,
 
@@ -488,7 +499,7 @@ SELECT DISTINCT ON (pde_id)
     silver.safe_numeric(nch_pde_op_drug_cvrg_amt,    TRUE)   AS nch_pde_op_drug_cvrg_amt,
     silver.safe_numeric(nch_pde_covered_drug_amt,    TRUE)   AS nch_pde_covered_drug_amt,
     silver.safe_numeric(nch_pde_ncvrd_labr_amt,      TRUE)   AS nch_pde_ncvrd_labr_amt,
-    silver.safe_numeric(nch_pde_bene_resp_amt,        TRUE)   AS nch_pde_bene_resp_amt,
+    silver.safe_numeric(nch_pde_bene_resp_amt,        TRUE)  AS nch_pde_bene_resp_amt,
 
     NOW()                                                    AS _loaded_at,
     MD5(ROW(
@@ -496,8 +507,7 @@ SELECT DISTINCT ON (pde_id)
         ndc, qty_dispnsed, days_suply_num, total_cost_amt
     )::TEXT)                                                 AS _row_hash
 
-FROM staging.prescription_drug_events
-ORDER BY pde_id
+FROM deduped
 ON CONFLICT (pde_id) DO NOTHING;
 
 
@@ -508,6 +518,12 @@ ON CONFLICT (pde_id) DO NOTHING;
 --    so we cast directly rather than using safe_date().
 -- =============================================================================
 
+WITH deduped AS (
+    SELECT DISTINCT ON (encounter_id)
+        *
+    FROM staging.kaggle_encounters
+    ORDER BY encounter_id
+)
 INSERT INTO silver.kaggle_encounters (
     encounter_id, desynpuf_id,
     start_date, end_date,
@@ -515,7 +531,7 @@ INSERT INTO silver.kaggle_encounters (
     description, code,
     _loaded_at, _row_hash
 )
-SELECT DISTINCT ON (encounter_id)
+SELECT
     encounter_id,
     NULLIF(TRIM(desynpuf_id), '')                            AS desynpuf_id,
 
@@ -547,8 +563,7 @@ SELECT DISTINCT ON (encounter_id)
         patient_age, patient_gender, code
     )::TEXT)                                                 AS _row_hash
 
-FROM staging.kaggle_encounters
-ORDER BY encounter_id
+FROM deduped
 ON CONFLICT (encounter_id) DO NOTHING;
 
 
