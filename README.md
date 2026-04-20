@@ -98,7 +98,7 @@ psql -d healthcare_dw -f sql/01_create_staging.sql
 psql -d healthcare_dw -f sql/02_load_staging.sql
 ```
 
-##### 5. Verify
+#####  5. Verify
 
 ```bash
 psql -d healthcare_dw
@@ -111,6 +111,30 @@ Then inside psql:
 ```
 
 You should see all staging tables listed.
+
+---
+
+## Silver Layer Strategy
+
+The silver layer focuses on **data quality, type conversion, and deduplication**. It transforms raw staging data into a clean, validated foundation for the gold layer.
+
+### Transformation Steps
+
+1. **Create silver schema** — Establish `silver` schema to mirror `staging` tables
+
+2. **Data type conversion** — Cast TEXT columns to appropriate types (DATE, NUMERIC, INTEGER, BOOLEAN); handle invalid/malformed values gracefully
+
+3. **Null & missing value handling** — Document null patterns per table; apply business logic (e.g., missing claim amounts → 0, invalid dates → NULL)
+
+4. **Deduplication** — Identify natural keys for each table (e.g., beneficiary_id + claim_id); remove exact duplicates and keep most recent record
+
+5. **Standardization of coded values** - The SynPUF data contains numeric codes (e.g. BENE_SEX_IDENT_CD is 1/2, BENE_RACE_CD is 1-6, chronic condition flags are 1/2 instead of true/false). Decoding those to human-readable values so that gold layer is cleaner. 
+
+6. **Data validation** — Add NOT NULL constraints where appropriate; add CHECK constraints for logical rules (e.g., end_date ≥ start_date); add FOREIGN KEY relationships
+
+7. **Additive columns** — Add `_loaded_at` timestamp (batch load time); add `_row_hash` for change detection (useful later)
+
+8. **Indexing** — Create indexes on foreign keys and commonly filtered columns
 
 ---
 
