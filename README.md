@@ -8,11 +8,11 @@ A modern data warehouse built on PostgreSQL using CMS Medicare synthetic claims 
 
 This project follows a three-layer medallion architecture:
 
-| Layer | Schema | Description |
-|---|---|---|
-| Bronze | `staging` | Raw data landed as-is from source CSVs. All columns typed as `TEXT`. No transformations. |
-| Silver | *(in progress)* | Cleaned, typed, and deduplicated data. Dates cast, numerics converted, nulls handled. |
-| Gold | *(in progress)* | Dimensional model (facts + dimensions) optimized for analytics and reporting. |
+| Layer | Schema | Status | Description |
+|---|---|---|---|
+| Bronze | `staging` | ✅ Complete | Raw data landed as-is from source CSVs. All columns typed as `TEXT`. No transformations. |
+| Silver | `silver` | ✅ Complete | Cleaned, typed, and deduplicated data. Dates cast, numerics converted, nulls handled, codes decoded. |
+| Gold | *(planned)* | 🔄 In Progress | Dimensional model (facts + dimensions) optimized for analytics and reporting. |
 
 ---
 
@@ -21,32 +21,31 @@ This project follows a three-layer medallion architecture:
 ### CMS 2008–2010 DE-SynPUF
 Synthetic Medicare claims data published by the Centers for Medicare & Medicaid Services. Based on a 5% sample of 2008 Medicare beneficiaries with claims from 2008–2010. Contains ~2.3M synthetic beneficiaries across 20 subsamples.
 
-| File Type | Staging Table | Columns |
-|---|---|---|
-| Beneficiary Summary (2008) | `staging.beneficiary_2008` | 32 |
-| Beneficiary Summary (2009) | `staging.beneficiary_2009` | 32 |
-| Beneficiary Summary (2010) | `staging.beneficiary_2010` | 32 |
-| Inpatient Claims | `staging.inpatient_claims` | 81 |
-| Outpatient Claims | `staging.outpatient_claims` | 76 |
-| Carrier Claims (Physician) | `staging.carrier_claims` | 142 |
-| Prescription Drug Events | `staging.prescription_drug_events` | 8 |
+| File Type | Staging Table | Silver Table | Rows (Silver) |
+|---|---|---|---|
+| Beneficiary Summary (2008–2010) | `staging.beneficiary_*` | `silver.beneficiary` | ~2.3M |
+| Inpatient Claims | `staging.inpatient_claims` | `silver.inpatient_claims` | 790K |
+| Outpatient Claims | `staging.outpatient_claims` | `silver.outpatient_claims` | 4.7M |
+| Carrier Claims (Physician) | `staging.carrier_claims` | `silver.carrier_claims` | 5.6M |
+| Prescription Drug Events | `staging.prescription_drug_events` | `silver.prescription_drug_events` | 66K |
 
 > Note: Carrier claims are released as two CSV files per sample (segment A and B) but are loaded into a single table.
 
 ### Kaggle Hospital Encounters
 A synthetic hospital encounter dataset used to supplement the CMS claims data with additional encounter-level attributes.
 
-| File Type | Staging Table |
-|---|---|
-| Hospital Encounters | `staging.kaggle_encounters` |
+| File Type | Staging Table | Silver Table |
+|---|---|---|
+| Hospital Encounters | `staging.kaggle_encounters` | `silver.kaggle_encounters` |
 
 ---
 
 ## Tech Stack
 
 - **Database:** PostgreSQL (local)
+- **Transformation:** SQL (CTEs, window functions, helper functions)
+- **Version Control:** Git
 - **Orchestration:** *(planned)*
-- **Transformation:** *(planned)*
 - **Visualization:** *(planned)*
 
 ---
@@ -56,8 +55,11 @@ A synthetic hospital encounter dataset used to supplement the CMS claims data wi
 ```
 healthcare-data-warehouse/
 └── sql/
-    ├── 01_create_staging.sql    # Bronze layer: creates all staging tables
-    └── ...
+    ├── 01_create_staging.sql      # Bronze: creates staging tables
+    ├── 02_load_staging.sql        # Bronze: loads CSVs into staging
+    ├── 03_create_silver.sql       # Silver: creates schema + tables with constraints
+    ├── 04_transform_silver.sql    # Silver: cleans, transforms, loads data
+    └── 05_create_gold.sql         # Gold: *(planned)*
 ```
 
 ---
@@ -86,59 +88,78 @@ brew services start postgresql@<version>
 psql -d postgres -c "CREATE DATABASE healthcare_dw;"
 ```
 
-##### 3. Create the bronze layer
+##### 3. Create and load the bronze layer
 
 ```bash
 psql -d healthcare_dw -f sql/01_create_staging.sql
-```
-
-##### 4. Load the bronze layer
-
-```bash
 psql -d healthcare_dw -f sql/02_load_staging.sql
 ```
 
-#####  5. Verify
+##### 4. Create and load the silver layer
 
 ```bash
-psql -d healthcare_dw
+psql -d healthcare_dw -f sql/03_create_silver.sql
+psql -d healthcare_dw -f sql/04_transform_silver.sql
 ```
 
-Then inside psql:
+##### 5. Verify
 
-```sql
-\dt staging.*
+```bash
+psql -d healthcare_dw -c "\dt silver.*"
 ```
 
-You should see all staging tables listed.
+You should see all silver tables listed.
 
 ---
 
-## Silver Layer Strategy
+## Silver Layer: Design & Implementation
 
-The silver layer focuses on **data quality, type conversion, and deduplication**. It transforms raw staging data into a clean, validated foundation for the gold layer.
+The silver layer transforms raw staging data into a clean, validated foundation for analytics. Key design decisions:
 
-### Transformation Steps
+### Transformation Pipeline
 
-1. **Create silver schema** — Establish `silver` schema to mirror `staging` tables
+1. **Type Casting** — TEXT → DATE (YYYYMMDD format), NUMERIC, SMALLINT, BOOLEAN with safe error handling
+2. **Null Handling** — Blank strings and sentinel values (e.g., "00000000") → NULL; missing amounts → 0
+3. **Code Decoding** — Numeric codes decoded to human-readable values:
+   - `BENE_SEX_IDENT_CD` (1/2) → ('M'/'F')
+   - `BENE_RACE_CD` (1-6) → race names
+   - Chronic condition flags (1/2) → BOOLEAN
+4. **Deduplication** — Natural keys identified per table; DISTINCT ON ensures one row per key
+5. **Data Validation** — CHECK constraints enforce logical rules (e.g., discharge_date ≥ admission_date)
+6. **Metadata Tracking** — `_loaded_at` (timestamp) and `_row_hash` (MD5) enable change detection
+7. **Indexing** — Indexes on foreign keys and commonly filtered columns (dates, beneficiary IDs)
 
-2. **Data type conversion** — Cast TEXT columns to appropriate types (DATE, NUMERIC, INTEGER, BOOLEAN); handle invalid/malformed values gracefully
+### Key Features
 
-3. **Null & missing value handling** — Document null patterns per table; apply business logic (e.g., missing claim amounts → 0, invalid dates → NULL)
+- **Idempotent** — Safe to re-run; `ON CONFLICT DO NOTHING` skips already-loaded rows
+- **Helper Functions** — `silver.safe_date()`, `silver.safe_numeric()`, `silver.safe_smallint()` handle edge cases
+- **Referential Integrity** — FOREIGN KEY constraints link claims → beneficiaries
+- **Constraints** — NOT NULL, CHECK, PRIMARY KEY, FOREIGN KEY ensure data quality
 
-4. **Deduplication** — Identify natural keys for each table (e.g., beneficiary_id + claim_id); remove exact duplicates and keep most recent record
+### Row Counts (Post-Transformation)
 
-5. **Standardization of coded values** - The SynPUF data contains numeric codes (e.g. BENE_SEX_IDENT_CD is 1/2, BENE_RACE_CD is 1-6, chronic condition flags are 1/2 instead of true/false). Decoding those to human-readable values so that gold layer is cleaner. 
+```
+beneficiary              → 343K rows  (deduplicated across 3 years)
+inpatient_claims        → 790K rows
+outpatient_claims       → 4.7M rows
+carrier_claims          → 5.6M rows
+prescription_drug_events → 66K rows
+kaggle_encounters       → (loaded, count TBD)
+```
 
-6. **Data validation** — Add NOT NULL constraints where appropriate; add CHECK constraints for logical rules (e.g., end_date ≥ start_date); add FOREIGN KEY relationships
+---
 
-7. **Additive columns** — Add `_loaded_at` timestamp (batch load time); add `_row_hash` for change detection (useful later)
+## Gold Layer *(Next Steps)*
 
-8. **Indexing** — Create indexes on foreign keys and commonly filtered columns
+The gold layer will focus on:
+- Dimensional modeling (facts + dimensions)
+- Aggregate tables for common queries (utilization, cost, chronic disease burden)
+- Materialized views for reporting
 
 ---
 
 ## References
 
 - [CMS DE-SynPUF User Manual](https://www.cms.gov/Research-Statistics-Data-and-Systems/Downloadable-Public-Use-Files/SynPUFs/Downloads/SynPUF_DUG.pdf)
+- [Medallion Architecture](https://www.databricks.com/blog/2022/06/24/build-a-scalable-data-lakehouse-with-the-medallion-architecture.html)
 - [Building a Modern Data Warehouse from Scratch](https://rihab-feki.medium.com/building-a-modern-data-warehouse-from-scratch-d18d346a7118)
