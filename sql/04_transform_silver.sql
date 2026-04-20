@@ -630,38 +630,38 @@ INSERT INTO silver.kaggle_encounters (
 SELECT
     ROW_NUMBER() OVER ()                                      AS encounter_id,
 
-    NULLIF(TRIM("Name"),              '')                     AS patient_name,
-    silver.safe_smallint("Age")                               AS patient_age,
-    NULLIF(TRIM("Gender"),            '')                     AS patient_gender,
-    NULLIF(TRIM("Blood Type"),        '')                     AS blood_type,
+    NULLIF(TRIM(name),              '')                       AS patient_name,
+    silver.safe_smallint(age)                                 AS patient_age,
+    NULLIF(TRIM(gender),            '')                       AS patient_gender,
+    NULLIF(TRIM(blood_type),        '')                       AS blood_type,
 
-    NULLIF(TRIM("Medical Condition"), '')                     AS medical_condition,
+    NULLIF(TRIM(medical_condition), '')                       AS medical_condition,
 
     CASE
-        WHEN "Date of Admission" IS NULL OR TRIM("Date of Admission") = '' THEN NULL
-        ELSE TRIM("Date of Admission")::DATE
+        WHEN date_of_admission IS NULL OR TRIM(date_of_admission) = '' THEN NULL
+        ELSE TRIM(date_of_admission)::DATE
     END                                                       AS admission_dt,
     CASE
-        WHEN "Discharge Date" IS NULL OR TRIM("Discharge Date") = '' THEN NULL
-        ELSE TRIM("Discharge Date")::DATE
+        WHEN discharge_date IS NULL OR TRIM(discharge_date) = '' THEN NULL
+        ELSE TRIM(discharge_date)::DATE
     END                                                       AS discharge_dt,
 
-    NULLIF(TRIM("Admission Type"),    '')                     AS admission_type,
-    silver.safe_smallint("Room Number")                       AS room_number,
+    NULLIF(TRIM(admission_type),    '')                       AS admission_type,
+    silver.safe_smallint(room_number)                         AS room_number,
 
-    NULLIF(TRIM("Doctor"),            '')                     AS doctor,
-    NULLIF(TRIM("Hospital"),          '')                     AS hospital,
-    NULLIF(TRIM("Insurance Provider"),'')                     AS insurance_provider,
-    silver.safe_numeric("Billing Amount", TRUE)               AS billing_amt,
+    NULLIF(TRIM(doctor),            '')                       AS doctor,
+    NULLIF(TRIM(hospital),          '')                       AS hospital,
+    NULLIF(TRIM(insurance_provider),'')                       AS insurance_provider,
+    silver.safe_numeric(billing_amount, TRUE)                 AS billing_amt,
 
-    NULLIF(TRIM("Medication"),        '')                     AS medication,
-    NULLIF(TRIM("Test Results"),      '')                     AS test_results,
+    NULLIF(TRIM(medication),        '')                       AS medication,
+    NULLIF(TRIM(test_results),      '')                       AS test_results,
 
     NOW()                                                     AS _loaded_at,
     MD5(ROW(
-        "Name", "Age", "Gender",
-        "Date of Admission", "Discharge Date",
-        "Medical Condition", "Hospital", "Billing Amount"
+        name, age, gender,
+        date_of_admission, discharge_date,
+        medical_condition, hospital, billing_amount
     )::TEXT)                                                  AS _row_hash
 
 FROM staging.kaggle_encounters
