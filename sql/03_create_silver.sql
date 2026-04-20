@@ -263,3 +263,127 @@ CREATE TABLE IF NOT EXISTS silver.outpatient_claims (
     PRIMARY KEY (clm_id, segment),
     CONSTRAINT chk_clm_dates CHECK (clm_thru_dt >= clm_from_dt)
 );
+
+-- ...existing code...
+
+CREATE TABLE IF NOT EXISTS silver.carrier_claims (
+    -- identity
+    clm_id                         TEXT NOT NULL,
+    clm_line_num                   SMALLINT NOT NULL,
+    desynpuf_id                    TEXT NOT NULL,
+
+    -- dates
+    clm_from_dt                    DATE,
+    clm_thru_dt                    DATE,
+
+    -- provider
+    prvdr_num                      TEXT,
+    at_physn_npi                   TEXT,
+    op_physn_npi                   TEXT,
+    ot_physn_npi                   TEXT,
+
+    -- claim amounts
+    clm_pmt_amt                    NUMERIC(12,2),
+    nch_prmry_pyr_clm_pd_amt       NUMERIC(12,2),
+    nch_bene_ptb_ddctbl_amt        NUMERIC(12,2),
+    nch_bene_ptb_coinsrnc_amt      NUMERIC(12,2),
+    nch_clm_carr_deductible_amt    NUMERIC(12,2),
+    nch_carr_line_mtus_cnt         NUMERIC(12,2),
+
+    -- service details
+    line_ndc_cd                    TEXT,
+    line_hcpcs_cd                  TEXT,
+    line_icd9_dgns_cd              TEXT,
+    line_place_of_srvc_cd          TEXT,
+    line_clm_rsn_cd                TEXT,
+
+    -- metadata
+    _loaded_at                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _row_hash                      TEXT NOT NULL,
+
+    -- constraints
+    PRIMARY KEY (clm_id, clm_line_num),
+    CONSTRAINT chk_carrier_clm_dates CHECK (clm_thru_dt >= clm_from_dt)
+);
+
+CREATE TABLE IF NOT EXISTS silver.prescription_drug_events (
+    -- identity
+    pde_id                         TEXT NOT NULL,
+    desynpuf_id                    TEXT NOT NULL,
+
+    -- dates
+    srvc_dt                        DATE,
+    fill_dt                        DATE,
+
+    -- drug details
+    ndc                            TEXT NOT NULL,
+    qty_dispnsed                   NUMERIC(8,2),
+    days_suply_num                 SMALLINT,
+    phrmcy_srvc_type_cd            TEXT,
+
+    -- cost amounts
+    total_cost_amt                 NUMERIC(12,2),
+    gcdf_dispnsing_fee_amt         NUMERIC(12,2),
+    nch_pde_ip_drug_cvrg_amt       NUMERIC(12,2),
+    nch_pde_op_drug_cvrg_amt       NUMERIC(12,2),
+    nch_pde_covered_drug_amt       NUMERIC(12,2),
+    nch_pde_ncvrd_labr_amt         NUMERIC(12,2),
+
+    -- beneficiary cost
+    nch_pde_bene_resp_amt          NUMERIC(12,2),
+
+    -- metadata
+    _loaded_at                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _row_hash                      TEXT NOT NULL,
+
+    -- constraints
+    PRIMARY KEY (pde_id),
+    CONSTRAINT chk_pde_dates CHECK (fill_dt >= srvc_dt OR fill_dt IS NULL OR srvc_dt IS NULL)
+);
+
+CREATE TABLE IF NOT EXISTS silver.kaggle_encounters (
+    -- identity
+    encounter_id                   TEXT NOT NULL PRIMARY KEY,
+    desynpuf_id                    TEXT,
+
+    -- dates
+    start_date                     DATE,
+    end_date                       DATE,
+
+    -- patient info
+    patient_age                    SMALLINT,
+    patient_gender                 CHAR(1),
+
+    -- encounter details
+    description                    TEXT,
+    code                           TEXT,
+
+    -- metadata
+    _loaded_at                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _row_hash                      TEXT NOT NULL,
+
+    -- constraints
+    CONSTRAINT chk_encounter_dates CHECK (end_date >= start_date OR end_date IS NULL)
+);
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+CREATE INDEX idx_beneficiary_desynpuf ON silver.beneficiary(desynpuf_id);
+CREATE INDEX idx_beneficiary_year ON silver.beneficiary(year);
+
+CREATE INDEX idx_inpatient_desynpuf ON silver.inpatient_claims(desynpuf_id);
+CREATE INDEX idx_inpatient_clm_from_dt ON silver.inpatient_claims(clm_from_dt);
+
+CREATE INDEX idx_outpatient_desynpuf ON silver.outpatient_claims(desynpuf_id);
+CREATE INDEX idx_outpatient_clm_from_dt ON silver.outpatient_claims(clm_from_dt);
+
+CREATE INDEX idx_carrier_desynpuf ON silver.carrier_claims(desynpuf_id);
+CREATE INDEX idx_carrier_clm_from_dt ON silver.carrier_claims(clm_from_dt);
+
+CREATE INDEX idx_pde_desynpuf ON silver.prescription_drug_events(desynpuf_id);
+CREATE INDEX idx_pde_srvc_dt ON silver.prescription_drug_events(srvc_dt);
+
+CREATE INDEX idx_kaggle_desynpuf ON silver.kaggle_encounters(desynpuf_id);
+CREATE INDEX idx_kaggle_start_date ON silver.kaggle_encounters(start_date);
