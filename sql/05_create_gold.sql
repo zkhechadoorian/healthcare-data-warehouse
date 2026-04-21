@@ -21,12 +21,12 @@ CREATE SCHEMA IF NOT EXISTS gold;
 
 CREATE TABLE IF NOT EXISTS gold.dim_beneficiary (
     beneficiary_key             SERIAL PRIMARY KEY,
-    beneficiary_id              INTEGER NOT NULL UNIQUE,
+    beneficiary_id              VARCHAR(20) NOT NULL UNIQUE,
     
     -- demographics
     date_of_birth               DATE,
     age_2008                    SMALLINT,
-    gender                      CHAR(1),
+    gender                      VARCHAR(10),
     race                        VARCHAR(50),
     state_code                  CHAR(2),
     county_code                 CHAR(3),
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS gold.fct_claims (
     claim_type                  VARCHAR(50) NOT NULL,  -- inpatient, outpatient, carrier
     
     -- dates
-    service_date                DATE NOT NULL,
+    service_date                DATE,
     claim_from_date             DATE,
     claim_thru_date             DATE,
     
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS gold.fct_prescription_events (
     drug_name                   VARCHAR(255),
     
     -- dates
-    service_date                DATE NOT NULL,
+    service_date                DATE,
     fill_date                   DATE,
     
     -- utilization
