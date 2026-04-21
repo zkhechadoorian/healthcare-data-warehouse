@@ -1,7 +1,13 @@
 
 # Healthcare Data Warehouse
 
-A modern data warehouse built on PostgreSQL using CMS Medicare synthetic claims data (DE-SynPUF) and supplementary Kaggle encounter data. The project follows a medallion architecture (bronze → silver → gold) and is designed to support healthcare analytics use cases such as utilization, cost, and chronic condition analysis.
+This project builds a production-style healthcare data warehouse from raw claims data to a dimensional model supporting analytics on:
+
+- chronic disease prevalence
+- healthcare utilization
+- medication adherence (PDC)
+
+The pipeline processes ~6M+ records and demonstrates data engineering practices including idempotent transformations, data validation, and dimensional modeling.
 
 ---
 
