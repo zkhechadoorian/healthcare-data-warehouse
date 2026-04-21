@@ -611,3 +611,54 @@ CREATE INDEX IF NOT EXISTS idx_pde_ndc          ON silver.prescription_drug_even
 -- kaggle_encounters
 CREATE INDEX IF NOT EXISTS idx_kag_admission_dt ON silver.kaggle_encounters(admission_dt);
 CREATE INDEX IF NOT EXISTS idx_kag_condition    ON silver.kaggle_encounters(medical_condition);
+
+
+-- =============================================================================
+-- QUARANTINE TABLES
+-- One companion table per silver table. Rows that fail validation rules
+-- (e.g. discharge_date < admission_date) are routed here instead of being
+-- silently dropped. Shares the same columns as the silver table, plus three
+-- metadata columns describing the rejection.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS silver.beneficiary_quarantine (
+    LIKE silver.beneficiary INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS silver.inpatient_claims_quarantine (
+    LIKE silver.inpatient_claims INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS silver.outpatient_claims_quarantine (
+    LIKE silver.outpatient_claims INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS silver.carrier_claims_quarantine (
+    LIKE silver.carrier_claims INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS silver.prescription_drug_events_quarantine (
+    LIKE silver.prescription_drug_events INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS silver.kaggle_encounters_quarantine (
+    LIKE silver.kaggle_encounters INCLUDING ALL,
+    _rejection_reason   TEXT        NOT NULL,
+    _rejected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    _source_table       TEXT        NOT NULL
+);

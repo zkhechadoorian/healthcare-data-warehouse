@@ -178,6 +178,90 @@ SELECT
 FROM deduped
 ON CONFLICT (desynpuf_id, year) DO NOTHING;
 
+-- Quarantine: beneficiary rows with invalid birth/death date ordering
+WITH deduped AS (
+    SELECT DISTINCT ON (desynpuf_id, src_year) *
+    FROM (
+        SELECT *, 2008 AS src_year FROM staging.beneficiary_2008
+        UNION ALL
+        SELECT *, 2009 AS src_year FROM staging.beneficiary_2009
+        UNION ALL
+        SELECT *, 2010 AS src_year FROM staging.beneficiary_2010
+    ) combined
+    ORDER BY desynpuf_id, src_year
+),
+transformed AS (
+    SELECT
+        desynpuf_id,
+        src_year::SMALLINT                                        AS year,
+        silver.safe_date(bene_birth_dt)                           AS bene_birth_dt,
+        silver.safe_date(bene_death_dt)                           AS bene_death_dt,
+        CASE bene_sex_ident_cd WHEN '1' THEN 'Male' WHEN '2' THEN 'Female' ELSE NULL END AS bene_sex,
+        CASE bene_race_cd
+            WHEN '1' THEN 'White'   WHEN '2' THEN 'Black'
+            WHEN '3' THEN 'Other'   WHEN '4' THEN 'Asian'
+            WHEN '5' THEN 'Hispanic' WHEN '6' THEN 'North American Native'
+            ELSE NULL END                                         AS bene_race,
+        UPPER(TRIM(bene_esrd_ind)) = 'Y'                          AS bene_esrd_ind,
+        silver.safe_smallint(sp_state_code)                       AS sp_state_code,
+        silver.safe_smallint(bene_county_cd)                      AS bene_county_cd,
+        silver.safe_smallint(bene_hi_cvrage_tot_mons)             AS bene_hi_cvrage_tot_mons,
+        silver.safe_smallint(bene_smi_cvrage_tot_mons)            AS bene_smi_cvrage_tot_mons,
+        silver.safe_smallint(bene_hmo_cvrage_tot_mons)            AS bene_hmo_cvrage_tot_mons,
+        silver.safe_smallint(plan_cvrg_mos_num)                   AS plan_cvrg_mos_num,
+        (sp_alzhdmta = '1') AS sp_alzhdmta, (sp_chf = '1') AS sp_chf,
+        (sp_chrnkidn = '1') AS sp_chrnkidn, (sp_cncr = '1') AS sp_cncr,
+        (sp_copd = '1') AS sp_copd, (sp_depressn = '1') AS sp_depressn,
+        (sp_diabetes = '1') AS sp_diabetes, (sp_ischmcht = '1') AS sp_ischmcht,
+        (sp_osteoprs = '1') AS sp_osteoprs, (sp_ra_oa = '1') AS sp_ra_oa,
+        (sp_strketia = '1') AS sp_strketia,
+        silver.safe_numeric(medreimb_ip,  TRUE) AS medreimb_ip,
+        silver.safe_numeric(benres_ip,    TRUE) AS benres_ip,
+        silver.safe_numeric(pppymt_ip,    TRUE) AS pppymt_ip,
+        silver.safe_numeric(medreimb_op,  TRUE) AS medreimb_op,
+        silver.safe_numeric(benres_op,    TRUE) AS benres_op,
+        silver.safe_numeric(pppymt_op,    TRUE) AS pppymt_op,
+        silver.safe_numeric(medreimb_car, TRUE) AS medreimb_car,
+        silver.safe_numeric(benres_car,   TRUE) AS benres_car,
+        silver.safe_numeric(pppymt_car,   TRUE) AS pppymt_car,
+        NOW() AS _loaded_at,
+        MD5(ROW(
+            desynpuf_id, src_year,
+            bene_birth_dt, bene_death_dt, bene_sex_ident_cd, bene_race_cd,
+            bene_esrd_ind, sp_state_code, bene_county_cd,
+            sp_alzhdmta, sp_chf, sp_chrnkidn, sp_cncr, sp_copd,
+            sp_depressn, sp_diabetes, sp_ischmcht, sp_osteoprs, sp_ra_oa, sp_strketia,
+            medreimb_ip, benres_ip, pppymt_ip,
+            medreimb_op, benres_op, pppymt_op,
+            medreimb_car, benres_car, pppymt_car
+        )::TEXT) AS _row_hash
+    FROM deduped
+)
+INSERT INTO silver.beneficiary_quarantine (
+    desynpuf_id, year,
+    bene_birth_dt, bene_death_dt, bene_sex, bene_race, bene_esrd_ind,
+    sp_state_code, bene_county_cd,
+    bene_hi_cvrage_tot_mons, bene_smi_cvrage_tot_mons,
+    bene_hmo_cvrage_tot_mons, plan_cvrg_mos_num,
+    sp_alzhdmta, sp_chf, sp_chrnkidn, sp_cncr, sp_copd,
+    sp_depressn, sp_diabetes, sp_ischmcht, sp_osteoprs, sp_ra_oa, sp_strketia,
+    medreimb_ip, benres_ip, pppymt_ip,
+    medreimb_op, benres_op, pppymt_op,
+    medreimb_car, benres_car, pppymt_car,
+    _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+SELECT
+    *,
+    'bene_death_dt < bene_birth_dt' AS _rejection_reason,
+    NOW()                           AS _rejected_at,
+    'staging.beneficiary_*'         AS _source_table
+FROM transformed
+WHERE bene_death_dt IS NOT NULL
+  AND bene_birth_dt IS NOT NULL
+  AND bene_death_dt < bene_birth_dt
+ON CONFLICT DO NOTHING;
+
 
 -- =============================================================================
 -- 2. silver.inpatient_claims
@@ -286,9 +370,100 @@ SELECT
 FROM deduped
 ON CONFLICT (clm_id, segment) DO NOTHING;
 
-
--- =============================================================================
--- 3. silver.outpatient_claims
+-- Quarantine: inpatient claims where clm_thru_dt < clm_from_dt
+WITH deduped AS (
+    SELECT DISTINCT ON (clm_id, segment) *
+    FROM staging.inpatient_claims
+    ORDER BY clm_id, segment
+),
+transformed AS (
+    SELECT
+        clm_id, desynpuf_id,
+        silver.safe_smallint(segment)                              AS segment,
+        silver.safe_date(clm_from_dt)                              AS clm_from_dt,
+        silver.safe_date(clm_thru_dt)                              AS clm_thru_dt,
+        silver.safe_date(clm_admsn_dt)                             AS clm_admsn_dt,
+        silver.safe_date(nch_bene_dschrg_dt)                       AS nch_bene_dschrg_dt,
+        NULLIF(TRIM(prvdr_num), '')    AS prvdr_num,
+        NULLIF(TRIM(at_physn_npi), '') AS at_physn_npi,
+        NULLIF(TRIM(op_physn_npi), '') AS op_physn_npi,
+        NULLIF(TRIM(ot_physn_npi), '') AS ot_physn_npi,
+        silver.safe_numeric(clm_pmt_amt,                    TRUE)  AS clm_pmt_amt,
+        silver.safe_numeric(nch_prmry_pyr_clm_pd_amt,       TRUE)  AS nch_prmry_pyr_clm_pd_amt,
+        silver.safe_numeric(clm_pass_thru_per_diem_amt,     TRUE)  AS clm_pass_thru_per_diem_amt,
+        silver.safe_numeric(nch_bene_ip_ddctbl_amt,         TRUE)  AS nch_bene_ip_ddctbl_amt,
+        silver.safe_numeric(nch_bene_pta_coinsrnc_lblty_am, TRUE)  AS nch_bene_pta_coinsrnc_lblty_am,
+        silver.safe_numeric(nch_bene_blood_ddctbl_lblty_am, TRUE)  AS nch_bene_blood_ddctbl_lblty_am,
+        silver.safe_smallint(clm_utlztn_day_cnt)                   AS clm_utlztn_day_cnt,
+        NULLIF(TRIM(clm_drg_cd), '')                               AS clm_drg_cd,
+        NULLIF(TRIM(admtng_icd9_dgns_cd), ''),
+        NULLIF(TRIM(icd9_dgns_cd_1),  ''), NULLIF(TRIM(icd9_dgns_cd_2),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_3),  ''), NULLIF(TRIM(icd9_dgns_cd_4),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_5),  ''), NULLIF(TRIM(icd9_dgns_cd_6),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_7),  ''), NULLIF(TRIM(icd9_dgns_cd_8),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_9),  ''), NULLIF(TRIM(icd9_dgns_cd_10), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_1), ''), NULLIF(TRIM(icd9_prcdr_cd_2), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_3), ''), NULLIF(TRIM(icd9_prcdr_cd_4), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_5), ''), NULLIF(TRIM(icd9_prcdr_cd_6), ''),
+        NULLIF(TRIM(hcpcs_cd_1),  ''), NULLIF(TRIM(hcpcs_cd_2),  ''), NULLIF(TRIM(hcpcs_cd_3),  ''),
+        NULLIF(TRIM(hcpcs_cd_4),  ''), NULLIF(TRIM(hcpcs_cd_5),  ''), NULLIF(TRIM(hcpcs_cd_6),  ''),
+        NULLIF(TRIM(hcpcs_cd_7),  ''), NULLIF(TRIM(hcpcs_cd_8),  ''), NULLIF(TRIM(hcpcs_cd_9),  ''),
+        NULLIF(TRIM(hcpcs_cd_10), ''), NULLIF(TRIM(hcpcs_cd_11), ''), NULLIF(TRIM(hcpcs_cd_12), ''),
+        NULLIF(TRIM(hcpcs_cd_13), ''), NULLIF(TRIM(hcpcs_cd_14), ''), NULLIF(TRIM(hcpcs_cd_15), ''),
+        NULLIF(TRIM(hcpcs_cd_16), ''), NULLIF(TRIM(hcpcs_cd_17), ''), NULLIF(TRIM(hcpcs_cd_18), ''),
+        NULLIF(TRIM(hcpcs_cd_19), ''), NULLIF(TRIM(hcpcs_cd_20), ''), NULLIF(TRIM(hcpcs_cd_21), ''),
+        NULLIF(TRIM(hcpcs_cd_22), ''), NULLIF(TRIM(hcpcs_cd_23), ''), NULLIF(TRIM(hcpcs_cd_24), ''),
+        NULLIF(TRIM(hcpcs_cd_25), ''), NULLIF(TRIM(hcpcs_cd_26), ''), NULLIF(TRIM(hcpcs_cd_27), ''),
+        NULLIF(TRIM(hcpcs_cd_28), ''), NULLIF(TRIM(hcpcs_cd_29), ''), NULLIF(TRIM(hcpcs_cd_30), ''),
+        NULLIF(TRIM(hcpcs_cd_31), ''), NULLIF(TRIM(hcpcs_cd_32), ''), NULLIF(TRIM(hcpcs_cd_33), ''),
+        NULLIF(TRIM(hcpcs_cd_34), ''), NULLIF(TRIM(hcpcs_cd_35), ''), NULLIF(TRIM(hcpcs_cd_36), ''),
+        NULLIF(TRIM(hcpcs_cd_37), ''), NULLIF(TRIM(hcpcs_cd_38), ''), NULLIF(TRIM(hcpcs_cd_39), ''),
+        NULLIF(TRIM(hcpcs_cd_40), ''), NULLIF(TRIM(hcpcs_cd_41), ''), NULLIF(TRIM(hcpcs_cd_42), ''),
+        NULLIF(TRIM(hcpcs_cd_43), ''), NULLIF(TRIM(hcpcs_cd_44), ''), NULLIF(TRIM(hcpcs_cd_45), ''),
+        NOW() AS _loaded_at,
+        MD5(ROW(
+            clm_id, desynpuf_id, segment,
+            clm_from_dt, clm_thru_dt, clm_admsn_dt,
+            prvdr_num, clm_pmt_amt, clm_utlztn_day_cnt, clm_drg_cd,
+            admtng_icd9_dgns_cd, icd9_dgns_cd_1
+        )::TEXT) AS _row_hash
+    FROM deduped
+)
+INSERT INTO silver.inpatient_claims_quarantine (
+    clm_id, desynpuf_id, segment,
+    clm_from_dt, clm_thru_dt, clm_admsn_dt, nch_bene_dschrg_dt,
+    prvdr_num, at_physn_npi, op_physn_npi, ot_physn_npi,
+    clm_pmt_amt, nch_prmry_pyr_clm_pd_amt, clm_pass_thru_per_diem_amt,
+    nch_bene_ip_ddctbl_amt, nch_bene_pta_coinsrnc_lblty_am,
+    nch_bene_blood_ddctbl_lblty_am,
+    clm_utlztn_day_cnt, clm_drg_cd, admtng_icd9_dgns_cd,
+    icd9_dgns_cd_1, icd9_dgns_cd_2, icd9_dgns_cd_3, icd9_dgns_cd_4,
+    icd9_dgns_cd_5, icd9_dgns_cd_6, icd9_dgns_cd_7, icd9_dgns_cd_8,
+    icd9_dgns_cd_9, icd9_dgns_cd_10,
+    icd9_prcdr_cd_1, icd9_prcdr_cd_2, icd9_prcdr_cd_3,
+    icd9_prcdr_cd_4, icd9_prcdr_cd_5, icd9_prcdr_cd_6,
+    hcpcs_cd_1, hcpcs_cd_2, hcpcs_cd_3, hcpcs_cd_4, hcpcs_cd_5,
+    hcpcs_cd_6, hcpcs_cd_7, hcpcs_cd_8, hcpcs_cd_9, hcpcs_cd_10,
+    hcpcs_cd_11, hcpcs_cd_12, hcpcs_cd_13, hcpcs_cd_14, hcpcs_cd_15,
+    hcpcs_cd_16, hcpcs_cd_17, hcpcs_cd_18, hcpcs_cd_19, hcpcs_cd_20,
+    hcpcs_cd_21, hcpcs_cd_22, hcpcs_cd_23, hcpcs_cd_24, hcpcs_cd_25,
+    hcpcs_cd_26, hcpcs_cd_27, hcpcs_cd_28, hcpcs_cd_29, hcpcs_cd_30,
+    hcpcs_cd_31, hcpcs_cd_32, hcpcs_cd_33, hcpcs_cd_34, hcpcs_cd_35,
+    hcpcs_cd_36, hcpcs_cd_37, hcpcs_cd_38, hcpcs_cd_39, hcpcs_cd_40,
+    hcpcs_cd_41, hcpcs_cd_42, hcpcs_cd_43, hcpcs_cd_44, hcpcs_cd_45,
+    _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+SELECT
+    *,
+    'clm_thru_dt < clm_from_dt'  AS _rejection_reason,
+    NOW()                         AS _rejected_at,
+    'staging.inpatient_claims'    AS _source_table
+FROM transformed
+WHERE clm_thru_dt IS NOT NULL
+  AND clm_from_dt IS NOT NULL
+  AND clm_thru_dt < clm_from_dt
+ON CONFLICT DO NOTHING;
 --    Source : staging.outpatient_claims
 --    Key    : clm_id + segment
 --    Note   : no admtng_icd9_dgns_cd in staging, excluded per design decision
@@ -384,6 +559,93 @@ SELECT
 
 FROM deduped
 ON CONFLICT (clm_id, segment) DO NOTHING;
+
+-- Quarantine: outpatient claims where clm_thru_dt < clm_from_dt
+INSERT INTO silver.outpatient_claims_quarantine (
+    clm_id, desynpuf_id, segment,
+    clm_from_dt, clm_thru_dt,
+    prvdr_num, at_physn_npi, op_physn_npi, ot_physn_npi,
+    clm_pmt_amt, nch_prmry_pyr_clm_pd_amt,
+    nch_bene_blood_ddctbl_lblty_am,
+    nch_bene_ptb_ddctbl_amt, nch_bene_ptb_coinsrnc_amt,
+    icd9_dgns_cd_1, icd9_dgns_cd_2, icd9_dgns_cd_3, icd9_dgns_cd_4,
+    icd9_dgns_cd_5, icd9_dgns_cd_6, icd9_dgns_cd_7, icd9_dgns_cd_8,
+    icd9_dgns_cd_9, icd9_dgns_cd_10,
+    icd9_prcdr_cd_1, icd9_prcdr_cd_2, icd9_prcdr_cd_3,
+    icd9_prcdr_cd_4, icd9_prcdr_cd_5, icd9_prcdr_cd_6,
+    hcpcs_cd_1, hcpcs_cd_2, hcpcs_cd_3, hcpcs_cd_4, hcpcs_cd_5,
+    hcpcs_cd_6, hcpcs_cd_7, hcpcs_cd_8, hcpcs_cd_9, hcpcs_cd_10,
+    hcpcs_cd_11, hcpcs_cd_12, hcpcs_cd_13, hcpcs_cd_14, hcpcs_cd_15,
+    hcpcs_cd_16, hcpcs_cd_17, hcpcs_cd_18, hcpcs_cd_19, hcpcs_cd_20,
+    hcpcs_cd_21, hcpcs_cd_22, hcpcs_cd_23, hcpcs_cd_24, hcpcs_cd_25,
+    hcpcs_cd_26, hcpcs_cd_27, hcpcs_cd_28, hcpcs_cd_29, hcpcs_cd_30,
+    hcpcs_cd_31, hcpcs_cd_32, hcpcs_cd_33, hcpcs_cd_34, hcpcs_cd_35,
+    hcpcs_cd_36, hcpcs_cd_37, hcpcs_cd_38, hcpcs_cd_39, hcpcs_cd_40,
+    hcpcs_cd_41, hcpcs_cd_42, hcpcs_cd_43, hcpcs_cd_44, hcpcs_cd_45,
+    _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+WITH deduped AS (
+    SELECT DISTINCT ON (clm_id, segment) *
+    FROM staging.outpatient_claims
+    ORDER BY clm_id, segment
+),
+transformed AS (
+    SELECT
+        clm_id, desynpuf_id,
+        silver.safe_smallint(segment)                              AS segment,
+        silver.safe_date(clm_from_dt)                              AS clm_from_dt,
+        silver.safe_date(clm_thru_dt)                              AS clm_thru_dt,
+        NULLIF(TRIM(prvdr_num), '')    AS prvdr_num,
+        NULLIF(TRIM(at_physn_npi), '') AS at_physn_npi,
+        NULLIF(TRIM(op_physn_npi), '') AS op_physn_npi,
+        NULLIF(TRIM(ot_physn_npi), '') AS ot_physn_npi,
+        silver.safe_numeric(clm_pmt_amt,                    TRUE)  AS clm_pmt_amt,
+        silver.safe_numeric(nch_prmry_pyr_clm_pd_amt,       TRUE)  AS nch_prmry_pyr_clm_pd_amt,
+        silver.safe_numeric(nch_bene_blood_ddctbl_lblty_am, TRUE)  AS nch_bene_blood_ddctbl_lblty_am,
+        silver.safe_numeric(nch_bene_ptb_ddctbl_amt,        TRUE)  AS nch_bene_ptb_ddctbl_amt,
+        silver.safe_numeric(nch_bene_ptb_coinsrnc_amt,      TRUE)  AS nch_bene_ptb_coinsrnc_amt,
+        NULLIF(TRIM(icd9_dgns_cd_1),  ''), NULLIF(TRIM(icd9_dgns_cd_2),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_3),  ''), NULLIF(TRIM(icd9_dgns_cd_4),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_5),  ''), NULLIF(TRIM(icd9_dgns_cd_6),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_7),  ''), NULLIF(TRIM(icd9_dgns_cd_8),  ''),
+        NULLIF(TRIM(icd9_dgns_cd_9),  ''), NULLIF(TRIM(icd9_dgns_cd_10), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_1), ''), NULLIF(TRIM(icd9_prcdr_cd_2), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_3), ''), NULLIF(TRIM(icd9_prcdr_cd_4), ''),
+        NULLIF(TRIM(icd9_prcdr_cd_5), ''), NULLIF(TRIM(icd9_prcdr_cd_6), ''),
+        NULLIF(TRIM(hcpcs_cd_1),  ''), NULLIF(TRIM(hcpcs_cd_2),  ''), NULLIF(TRIM(hcpcs_cd_3),  ''),
+        NULLIF(TRIM(hcpcs_cd_4),  ''), NULLIF(TRIM(hcpcs_cd_5),  ''), NULLIF(TRIM(hcpcs_cd_6),  ''),
+        NULLIF(TRIM(hcpcs_cd_7),  ''), NULLIF(TRIM(hcpcs_cd_8),  ''), NULLIF(TRIM(hcpcs_cd_9),  ''),
+        NULLIF(TRIM(hcpcs_cd_10), ''), NULLIF(TRIM(hcpcs_cd_11), ''), NULLIF(TRIM(hcpcs_cd_12), ''),
+        NULLIF(TRIM(hcpcs_cd_13), ''), NULLIF(TRIM(hcpcs_cd_14), ''), NULLIF(TRIM(hcpcs_cd_15), ''),
+        NULLIF(TRIM(hcpcs_cd_16), ''), NULLIF(TRIM(hcpcs_cd_17), ''), NULLIF(TRIM(hcpcs_cd_18), ''),
+        NULLIF(TRIM(hcpcs_cd_19), ''), NULLIF(TRIM(hcpcs_cd_20), ''), NULLIF(TRIM(hcpcs_cd_21), ''),
+        NULLIF(TRIM(hcpcs_cd_22), ''), NULLIF(TRIM(hcpcs_cd_23), ''), NULLIF(TRIM(hcpcs_cd_24), ''),
+        NULLIF(TRIM(hcpcs_cd_25), ''), NULLIF(TRIM(hcpcs_cd_26), ''), NULLIF(TRIM(hcpcs_cd_27), ''),
+        NULLIF(TRIM(hcpcs_cd_28), ''), NULLIF(TRIM(hcpcs_cd_29), ''), NULLIF(TRIM(hcpcs_cd_30), ''),
+        NULLIF(TRIM(hcpcs_cd_31), ''), NULLIF(TRIM(hcpcs_cd_32), ''), NULLIF(TRIM(hcpcs_cd_33), ''),
+        NULLIF(TRIM(hcpcs_cd_34), ''), NULLIF(TRIM(hcpcs_cd_35), ''), NULLIF(TRIM(hcpcs_cd_36), ''),
+        NULLIF(TRIM(hcpcs_cd_37), ''), NULLIF(TRIM(hcpcs_cd_38), ''), NULLIF(TRIM(hcpcs_cd_39), ''),
+        NULLIF(TRIM(hcpcs_cd_40), ''), NULLIF(TRIM(hcpcs_cd_41), ''), NULLIF(TRIM(hcpcs_cd_42), ''),
+        NULLIF(TRIM(hcpcs_cd_43), ''), NULLIF(TRIM(hcpcs_cd_44), ''), NULLIF(TRIM(hcpcs_cd_45), ''),
+        NOW() AS _loaded_at,
+        MD5(ROW(
+            clm_id, desynpuf_id, segment,
+            clm_from_dt, clm_thru_dt,
+            prvdr_num, clm_pmt_amt, icd9_dgns_cd_1
+        )::TEXT) AS _row_hash
+    FROM deduped
+)
+SELECT
+    *,
+    'clm_thru_dt < clm_from_dt'   AS _rejection_reason,
+    NOW()                          AS _rejected_at,
+    'staging.outpatient_claims'    AS _source_table
+FROM transformed
+WHERE clm_thru_dt IS NOT NULL
+  AND clm_from_dt IS NOT NULL
+  AND clm_thru_dt < clm_from_dt
+ON CONFLICT DO NOTHING;
 
 
 -- =============================================================================
@@ -559,6 +821,36 @@ SELECT
 FROM deduped
 ON CONFLICT (clm_id) DO NOTHING;
 
+-- Quarantine: carrier claims where clm_thru_dt < clm_from_dt
+WITH deduped AS (
+    SELECT DISTINCT ON (clm_id) *
+    FROM staging.carrier_claims
+    ORDER BY clm_id
+),
+transformed AS (
+    SELECT
+        clm_id, desynpuf_id,
+        silver.safe_date(clm_from_dt) AS clm_from_dt,
+        silver.safe_date(clm_thru_dt) AS clm_thru_dt,
+        NOW()                          AS _loaded_at,
+        MD5(ROW(clm_id, desynpuf_id, clm_from_dt, clm_thru_dt, icd9_dgns_cd_1, hcpcs_cd_1, line_nch_pmt_amt_1, line_nch_pmt_amt_2)::TEXT) AS _row_hash
+    FROM deduped
+)
+INSERT INTO silver.carrier_claims_quarantine (
+    clm_id, desynpuf_id, clm_from_dt, clm_thru_dt, _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+SELECT
+    clm_id, desynpuf_id, clm_from_dt, clm_thru_dt, _loaded_at, _row_hash,
+    'clm_thru_dt < clm_from_dt' AS _rejection_reason,
+    NOW()                        AS _rejected_at,
+    'staging.carrier_claims'     AS _source_table
+FROM transformed
+WHERE clm_thru_dt IS NOT NULL
+  AND clm_from_dt IS NOT NULL
+  AND clm_thru_dt < clm_from_dt
+ON CONFLICT DO NOTHING;
+
 
 -- =============================================================================
 -- 5. silver.prescription_drug_events
@@ -607,6 +899,41 @@ SELECT
 
 FROM deduped
 ON CONFLICT (pde_id) DO NOTHING;
+
+-- Quarantine: prescription rows with negative cost amounts
+WITH deduped AS (
+    SELECT DISTINCT ON (pde_id) *
+    FROM staging.prescription_drug_events
+    ORDER BY pde_id
+),
+transformed AS (
+    SELECT
+        pde_id, desynpuf_id,
+        silver.safe_date(srvc_dt)               AS srvc_dt,
+        NULLIF(TRIM(prod_srvc_id), '')           AS ndc,
+        silver.safe_numeric(qty_dspnsd_num, FALSE) AS qty_dispensed,
+        silver.safe_smallint(days_suply_num)     AS days_supply,
+        silver.safe_numeric(ptnt_pay_amt,  TRUE) AS ptnt_pay_amt,
+        silver.safe_numeric(tot_rx_cst_amt, TRUE) AS tot_rx_cst_amt,
+        NOW() AS _loaded_at,
+        MD5(ROW(pde_id, desynpuf_id, srvc_dt, prod_srvc_id, qty_dspnsd_num, days_suply_num, ptnt_pay_amt, tot_rx_cst_amt)::TEXT) AS _row_hash
+    FROM deduped
+)
+INSERT INTO silver.prescription_drug_events_quarantine (
+    pde_id, desynpuf_id, srvc_dt, ndc,
+    qty_dispensed, days_supply,
+    ptnt_pay_amt, tot_rx_cst_amt,
+    _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+SELECT
+    *,
+    'negative cost amount'                       AS _rejection_reason,
+    NOW()                                        AS _rejected_at,
+    'staging.prescription_drug_events'           AS _source_table
+FROM transformed
+WHERE ptnt_pay_amt < 0 OR tot_rx_cst_amt < 0
+ON CONFLICT DO NOTHING;
 
 
 -- =============================================================================
@@ -657,6 +984,50 @@ INSERT INTO silver.kaggle_encounters (
 )
 SELECT * FROM transformed
 ON CONFLICT (encounter_id) DO NOTHING;
+
+-- Quarantine: kaggle encounters where discharge_dt < admission_dt
+WITH transformed AS (
+    SELECT
+        ROW_NUMBER() OVER () AS encounter_id,
+        NULLIF(TRIM(name), '') AS patient_name,
+        silver.safe_smallint(age) AS patient_age,
+        NULLIF(TRIM(gender), '') AS patient_gender,
+        NULLIF(TRIM(blood_type), '') AS blood_type,
+        NULLIF(TRIM(medical_condition), '') AS medical_condition,
+        CASE WHEN date_of_admission IS NULL OR TRIM(date_of_admission) = '' THEN NULL ELSE TRIM(date_of_admission)::DATE END AS admission_dt,
+        CASE WHEN discharge_date IS NULL OR TRIM(discharge_date) = '' THEN NULL ELSE TRIM(discharge_date)::DATE END AS discharge_dt,
+        NULLIF(TRIM(admission_type), '') AS admission_type,
+        silver.safe_smallint(room_number) AS room_number,
+        NULLIF(TRIM(doctor), '') AS doctor,
+        NULLIF(TRIM(hospital), '') AS hospital,
+        NULLIF(TRIM(insurance_provider), '') AS insurance_provider,
+        silver.safe_numeric(billing_amount, TRUE) AS billing_amt,
+        NULLIF(TRIM(medication), '') AS medication,
+        NULLIF(TRIM(test_results), '') AS test_results,
+        NOW() AS _loaded_at,
+        MD5(ROW(name, age, gender, date_of_admission, discharge_date, medical_condition, hospital, billing_amount)::TEXT) AS _row_hash
+    FROM staging.kaggle_encounters
+)
+INSERT INTO silver.kaggle_encounters_quarantine (
+    encounter_id,
+    patient_name, patient_age, patient_gender, blood_type,
+    medical_condition,
+    admission_dt, discharge_dt, admission_type, room_number,
+    doctor, hospital, insurance_provider, billing_amt,
+    medication, test_results,
+    _loaded_at, _row_hash,
+    _rejection_reason, _rejected_at, _source_table
+)
+SELECT
+    *,
+    'discharge_dt < admission_dt'   AS _rejection_reason,
+    NOW()                           AS _rejected_at,
+    'staging.kaggle_encounters'     AS _source_table
+FROM transformed
+WHERE discharge_dt IS NOT NULL
+  AND admission_dt IS NOT NULL
+  AND discharge_dt < admission_dt
+ON CONFLICT DO NOTHING;
 
 
 -- =============================================================================
