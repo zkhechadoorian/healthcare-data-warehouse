@@ -63,7 +63,7 @@ WITH (FORMAT csv, HEADER true);
 \echo ''
 \echo 'Row counts:'
 SELECT 'beneficiary_2008'        AS table_name, COUNT(*) AS rows FROM staging.beneficiary_2008
-UNION ALL
+UNION ALL -- duplicates are not removed and/or hidden
 SELECT 'beneficiary_2009',                       COUNT(*) FROM staging.beneficiary_2009
 UNION ALL
 SELECT 'beneficiary_2010',                       COUNT(*) FROM staging.beneficiary_2010
