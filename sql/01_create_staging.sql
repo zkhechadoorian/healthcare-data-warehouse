@@ -1,21 +1,21 @@
 CREATE SCHEMA IF NOT EXISTS staging;
 
 CREATE TABLE IF NOT EXISTS staging.kaggle_encounters (
-    "Name"                         TEXT,
-    "Age"                          TEXT,
-    "Gender"                       TEXT,
-    "Blood Type"                   TEXT,
-    "Medical Condition"            TEXT,
-    "Date of Admission"            TEXT,
-    "Doctor"                       TEXT,
-    "Hospital"                     TEXT,
-    "Insurance Provider"           TEXT,
-    "Billing Amount"               TEXT,
-    "Room Number"                  TEXT,
-    "Admission Type"               TEXT,
-    "Discharge Date"               TEXT,
-    "Medication"                   TEXT,
-    "Test Results"                 TEXT
+    name                         TEXT,
+    age                          TEXT,
+    gender                       TEXT,
+    blood_type                   TEXT,
+    medical_condition            TEXT,
+    date_of_admission            TEXT,
+    doctor                       TEXT,
+    hospital                     TEXT,
+    insurance_provider           TEXT,
+    billing_amount               TEXT,
+    room_number                  TEXT,
+    admission_type               TEXT,
+    discharge_date               TEXT,
+    medication                   TEXT,
+    test_results                 TEXT
 );
 
 CREATE TABLE IF NOT EXISTS staging.beneficiary_2008 (
