@@ -54,7 +54,7 @@ A synthetic hospital encounter dataset used to supplement the CMS claims data wi
 - **Transformation:** SQL (CTEs, window functions, helper functions)
 - **Version Control:** Git
 - **Orchestration:** *(planned)*
-- **Visualization:** *(planned)*
+- **Visualization:** [HTML Dashboard](https://zkhechadoorian.github.io/healthcare-data-warehouse/)
 
 ---
 
