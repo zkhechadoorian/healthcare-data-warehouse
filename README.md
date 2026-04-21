@@ -12,7 +12,7 @@ This project follows a three-layer medallion architecture:
 |---|---|---|---|
 | Bronze | `staging` | ✅ Complete | Raw data landed as-is from source CSVs. All columns typed as `TEXT`. No transformations. |
 | Silver | `silver` | ✅ Complete | Cleaned, typed, and deduplicated data. Dates cast, numerics converted, nulls handled, codes decoded. |
-| Gold | *(planned)* | 🔄 In Progress | Dimensional model (facts + dimensions) optimized for analytics and reporting. |
+| Gold | `gold` | ✅ Complete | Dimensional model (facts + dimensions) optimized for analytics and reporting. |
 
 ---
 
@@ -59,7 +59,8 @@ healthcare-data-warehouse/
     ├── 02_load_staging.sql        # Bronze: loads CSVs into staging
     ├── 03_create_silver.sql       # Silver: creates schema + tables with constraints
     ├── 04_transform_silver.sql    # Silver: cleans, transforms, loads data
-    └── 05_create_gold.sql         # Gold: *(planned)*
+    ├── 05_create_gold.sql         # Gold: creates schema, dimension, fact, and aggregate tables
+    └── 06_transform_gold.sql      # Gold: populates gold tables from silver layer
 ```
 
 ---
@@ -102,13 +103,21 @@ psql -d healthcare_dw -f sql/03_create_silver.sql
 psql -d healthcare_dw -f sql/04_transform_silver.sql
 ```
 
-##### 5. Verify
+##### 5. Create and load the gold layer
+
+```bash
+psql -d healthcare_dw -f sql/05_create_gold.sql
+psql -d healthcare_dw -f sql/06_transform_gold.sql
+```
+
+##### 6. Verify
 
 ```bash
 psql -d healthcare_dw -c "\dt silver.*"
+psql -d healthcare_dw -c "\dt gold.*"
 ```
 
-You should see all silver tables listed.
+You should see all silver and gold tables listed.
 
 ---
 
@@ -139,22 +148,59 @@ The silver layer transforms raw staging data into a clean, validated foundation 
 ### Row Counts (Post-Transformation)
 
 ```
-beneficiary              → 343K rows  (deduplicated across 3 years)
-inpatient_claims        → 790K rows
-outpatient_claims       → 4.7M rows
-carrier_claims          → 5.6M rows
-prescription_drug_events → 66K rows
-kaggle_encounters       → (loaded, count TBD)
+beneficiary               → 343K rows  (deduplicated across 3 years)
+inpatient_claims          → 790K rows
+outpatient_claims         → 4.7M rows
+carrier_claims            → 5.6M rows
+prescription_drug_events  → 66K rows
+kaggle_encounters         → (loaded, count TBD)
 ```
 
 ---
 
-## Gold Layer *(Next Steps)*
+## Gold Layer: Design & Implementation
 
-The gold layer will focus on:
-- Dimensional modeling (facts + dimensions)
-- Aggregate tables for common queries (utilization, cost, chronic disease burden)
-- Materialized views for reporting
+The gold layer implements a dimensional model (star schema) on top of the silver layer, optimized for analytical queries across cost, utilization, and medication adherence.
+
+### Transformation Pipeline
+
+1. **Dimension Population** — Dimension tables are populated first to establish surrogate keys before facts are loaded
+2. **Fact Table Joins** — Fact tables resolve surrogate keys by joining silver claims data to the relevant dimensions
+3. **Aggregation** — Pre-computed aggregate tables roll up fact data by beneficiary, provider, and drug for fast reporting
+4. **Idempotent** — Each section TRUNCATEs before inserting, making the transform script safe to re-run
+
+### Table Structure
+
+**Dimension Tables:**
+- `dim_time` — Calendar dimension covering every date in 2008–2010 (year, month, quarter, week)
+- `dim_beneficiary` — One row per patient; demographics and chronic condition flags aggregated across all years
+- `dim_provider` — One row per provider; typed as inpatient, outpatient, or carrier
+- `dim_diagnosis` — One row per ICD-9 code that appears in any claim; sparsely populated (no external code lookup)
+
+**Fact Tables:**
+- `fct_claims` — One row per claim across all three claim types (inpatient, outpatient, carrier); includes cost and utilization metrics
+- `fct_prescription_events` — One row per prescription fill; includes NDC drug code, days supply, and cost
+
+**Aggregate Tables:**
+- `agg_beneficiary_year` — Costs and claim counts per patient per year, broken out by claim type and prescriptions
+- `agg_provider_year` — Volume and cost metrics per provider per year
+- `agg_medication_adherence` — Per patient per drug per year; computes PDC (Proportion of Days Covered) and adherence flag (PDC ≥ 0.80)
+
+### Row Counts (Post-Transformation)
+
+```
+dim_time                  →   1,096 rows
+dim_beneficiary           → 116,352 rows
+dim_provider              → 621,778 rows
+dim_diagnosis             →  13,228 rows
+
+fct_claims                → 5,598,898 rows  (inpatient: 66K, outpatient: 790K, carrier: 4.7M)
+fct_prescription_events   → 5,552,421 rows
+
+agg_beneficiary_year      →   282,123 rows
+agg_provider_year         → 1,294,529 rows
+agg_medication_adherence  → 5,551,248 rows
+```
 
 ---
 
