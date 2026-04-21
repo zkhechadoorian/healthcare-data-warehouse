@@ -1,4 +1,3 @@
-
 # Healthcare Data Warehouse
 
 This project builds a production-style healthcare data warehouse from raw claims data to a dimensional model supporting analytics on:
@@ -179,6 +178,7 @@ The silver layer transforms raw staging data into a clean, validated foundation 
 - **Helper Functions** — `silver.safe_date()`, `silver.safe_numeric()`, `silver.safe_smallint()` handle edge cases
 - **Referential Integrity** — FOREIGN KEY constraints link claims → beneficiaries
 - **Constraints** — NOT NULL, CHECK, PRIMARY KEY, FOREIGN KEY ensure data quality
+- **Row Hashing** — Each silver table stores a `_row_hash` column — an MD5 hash computed from all of a row's column values. Currently, the transform scripts use a truncate-and-reload pattern, so the hash is not yet being used for comparison logic. It is stored as forward-looking infrastructure: if the pipeline is later extended to support incremental loads, the hash will enable efficient change detection — incoming rows can be compared against the stored hash, and only rows where the hash differs need to be updated. This avoids a full reload on every run and makes the pipeline ready for incremental loading without any schema changes.
 
 ### Row Counts (Post-Transformation)
 
