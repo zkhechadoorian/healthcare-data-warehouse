@@ -8,6 +8,8 @@ A modern data warehouse built on PostgreSQL using CMS Medicare synthetic claims 
 ## Analytics Dashboard
 [View live dashboard →](https://zkhechadoorian.github.io/healthcare-data-warehouse/)
 
+![](assets/dashboard.jpg)
+
 ---
 
 ## Architecture
