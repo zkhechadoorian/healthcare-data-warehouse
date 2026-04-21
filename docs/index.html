@@ -336,6 +336,81 @@
     </div>
   </section>
 
+  <!-- ── CHART 2: Disease by Age Group ───────────────────────────────── -->
+  <section class="section">
+    <div class="section-label">Analysis 02</div>
+    <h2 class="section-title">Chronic disease prevalence by age group</h2>
+    <p class="section-desc">Prevalence rates across six age buckets. Each line is a condition; the upward trend with age reflects the compounding chronic disease burden typical of the Medicare population.</p>
+
+    <div class="card">
+      <div class="metrics-row">
+        <div class="metric">
+          <div class="metric-label">Fastest rising</div>
+          <div class="metric-value">CKD</div>
+          <div class="metric-sub">30.7% → 40.6% (Under 65 to 85+)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Highest overall</div>
+          <div class="metric-value">AMI</div>
+          <div class="metric-sub">70.5% in 85+ group</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Peak age group</div>
+          <div class="metric-value">85+</div>
+          <div class="metric-sub">13,136 beneficiaries</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Notable dip</div>
+          <div class="metric-value">65–69</div>
+          <div class="metric-sub">Lowest rates across all conditions</div>
+        </div>
+      </div>
+
+      <div class="chart-legend" id="ageLegend"></div>
+
+      <div class="chart-wrap" style="height: 380px;">
+        <canvas id="ageChart"
+          role="img"
+          aria-label="Line chart showing chronic disease prevalence by age group from Under 65 to 85+. All conditions trend upward with age. AMI is highest overall at 70.5% in the 85+ group. The 65-69 group shows the lowest rates across all conditions.">
+          Age groups: Under 65, 65-69, 70-74, 75-79, 80-84, 85+.
+          AMI rates: 60.4, 56.8, 64.0, 66.4, 69.5, 70.5.
+          Diabetes rates: 53.0, 47.9, 55.2, 58.3, 61.8, 63.0.
+          Heart failure rates: 48.5, 43.5, 51.1, 54.0, 58.5, 59.7.
+          Depression rates: 42.5, 34.0, 39.8, 41.6, 45.6, 47.8.
+          CKD rates: 30.7, 26.3, 31.8, 34.6, 37.8, 40.6.
+          COPD rates: 25.7, 20.5, 25.5, 28.0, 31.0, 34.1.
+          Stroke rates: 9.4, 7.5, 9.8, 11.4, 12.1, 13.9.
+        </canvas>
+      </div>
+
+      <details>
+        <summary>View SQL</summary>
+        <pre><span class="kw">SELECT</span>
+    <span class="kw">CASE</span>
+        <span class="kw">WHEN</span> age_2008 <span class="kw">BETWEEN</span> <span class="num">0</span>  <span class="kw">AND</span> <span class="num">64</span> <span class="kw">THEN</span> <span class="str">'Under 65'</span>
+        <span class="kw">WHEN</span> age_2008 <span class="kw">BETWEEN</span> <span class="num">65</span> <span class="kw">AND</span> <span class="num">69</span> <span class="kw">THEN</span> <span class="str">'65–69'</span>
+        <span class="kw">WHEN</span> age_2008 <span class="kw">BETWEEN</span> <span class="num">70</span> <span class="kw">AND</span> <span class="num">74</span> <span class="kw">THEN</span> <span class="str">'70–74'</span>
+        <span class="kw">WHEN</span> age_2008 <span class="kw">BETWEEN</span> <span class="num">75</span> <span class="kw">AND</span> <span class="num">79</span> <span class="kw">THEN</span> <span class="str">'75–79'</span>
+        <span class="kw">WHEN</span> age_2008 <span class="kw">BETWEEN</span> <span class="num">80</span> <span class="kw">AND</span> <span class="num">84</span> <span class="kw">THEN</span> <span class="str">'80–84'</span>
+        <span class="kw">WHEN</span> age_2008 &gt;= <span class="num">85</span>             <span class="kw">THEN</span> <span class="str">'85+'</span>
+        <span class="kw">ELSE</span> <span class="str">'Unknown'</span>
+    <span class="kw">END AS</span> age_group,
+    <span class="fn">COUNT</span>(*) <span class="kw">AS</span> beneficiary_count,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_diabetes::<span class="kw">int</span>)      / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_diabetes,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_heart_failure::<span class="kw">int</span>) / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_heart_failure,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_copd::<span class="kw">int</span>)          / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_copd,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_ami::<span class="kw">int</span>)           / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_ami,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_stroke::<span class="kw">int</span>)        / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_stroke,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_depression::<span class="kw">int</span>)    / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_depression,
+    <span class="fn">ROUND</span>(<span class="num">100.0</span> * <span class="fn">SUM</span>(has_ckd::<span class="kw">int</span>)           / <span class="fn">COUNT</span>(*), <span class="num">1</span>) <span class="kw">AS</span> pct_ckd
+<span class="kw">FROM</span> gold.dim_beneficiary
+<span class="kw">WHERE</span> age_2008 <span class="kw">IS NOT NULL</span>
+<span class="kw">GROUP BY</span> age_group
+<span class="kw">ORDER BY</span> <span class="fn">MIN</span>(age_2008);</pre>
+      </details>
+    </div>
+  </section>
+
   <!-- placeholder for future charts -->
 
 </main>
@@ -392,6 +467,79 @@ new Chart(document.getElementById('genderChart'), {
     scales: {
       x: {
         grid: { display: false },
+        ticks: { color: '#7a8194', font: { size: 12, family: "'DM Mono', monospace" } },
+        border: { color: 'rgba(255,255,255,0.07)' }
+      },
+      y: {
+        min: 0, max: 80,
+        ticks: {
+          callback: v => v + '%',
+          color: '#7a8194',
+          font: { size: 11, family: "'DM Mono', monospace" }
+        },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        border: { color: 'rgba(255,255,255,0.07)' }
+      }
+    }
+  }
+});
+</script>
+
+<script>
+const ageLabels = ['Under 65','65–69','70–74','75–79','80–84','85+'];
+
+const ageDatasets = [
+  { label: 'AMI',          data: [60.4, 56.8, 64.0, 66.4, 69.5, 70.5], color: '#F09595' },
+  { label: 'Diabetes',     data: [53.0, 47.9, 55.2, 58.3, 61.8, 63.0], color: '#AFA9EC' },
+  { label: 'Heart failure',data: [48.5, 43.5, 51.1, 54.0, 58.5, 59.7], color: '#5DCAA5' },
+  { label: 'Depression',   data: [42.5, 34.0, 39.8, 41.6, 45.6, 47.8], color: '#FAC775' },
+  { label: 'CKD',          data: [30.7, 26.3, 31.8, 34.6, 37.8, 40.6], color: '#85B7EB' },
+  { label: 'COPD',         data: [25.7, 20.5, 25.5, 28.0, 31.0, 34.1], color: '#ED93B1' },
+  { label: 'Stroke',       data: [ 9.4,  7.5,  9.8, 11.4, 12.1, 13.9], color: '#C0DD97' },
+];
+
+const legendEl = document.getElementById('ageLegend');
+ageDatasets.forEach(d => {
+  legendEl.innerHTML += `<div class="legend-item">
+    <div class="legend-swatch" style="background:${d.color}"></div>${d.label}
+  </div>`;
+});
+
+new Chart(document.getElementById('ageChart'), {
+  type: 'line',
+  data: {
+    labels: ageLabels,
+    datasets: ageDatasets.map(d => ({
+      label: d.label,
+      data: d.data,
+      borderColor: d.color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      pointBackgroundColor: d.color,
+      tension: 0.3,
+    }))
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1e25',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        titleColor: '#e8eaf0',
+        bodyColor: '#7a8194',
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255,255,255,0.04)' },
         ticks: { color: '#7a8194', font: { size: 12, family: "'DM Mono', monospace" } },
         border: { color: 'rgba(255,255,255,0.07)' }
       },
