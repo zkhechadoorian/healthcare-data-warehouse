@@ -180,6 +180,10 @@ The silver layer transforms raw staging data into a clean, validated foundation 
 - **Constraints** — NOT NULL, CHECK, PRIMARY KEY, FOREIGN KEY ensure data quality
 - **Row Hashing** — Each silver table stores a `_row_hash` column — an MD5 hash computed from all of a row's column values. Currently, the transform scripts use a truncate-and-reload pattern, so the hash is not yet being used for comparison logic. It is stored as forward-looking infrastructure: if the pipeline is later extended to support incremental loads, the hash will enable efficient change detection — incoming rows can be compared against the stored hash, and only rows where the hash differs need to be updated. This avoids a full reload on every run and makes the pipeline ready for incremental loading without any schema changes.
 
+### Quarantine Tables
+
+Each silver table has a companion quarantine table (e.g. `silver.beneficiary_quarantine`) that captures rows rejected during validation. Rather than silently dropping bad data, the pipeline routes invalid rows to quarantine with three additional metadata columns: `_rejection_reason` (what rule was violated), `_rejected_at` (when it was rejected), and `_source_table` (which staging table the row came from). Current validation rules are: invalid date ordering across claims and encounter tables, death before birth in beneficiary, and negative cost amounts in prescription drug events. Quarantine tables make data quality issues visible and recoverable without contaminating the silver layer.
+
 ### Row Counts (Post-Transformation)
 
 ```
