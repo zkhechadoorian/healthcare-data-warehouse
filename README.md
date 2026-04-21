@@ -6,9 +6,30 @@ A modern data warehouse built on PostgreSQL using CMS Medicare synthetic claims 
 ---
 
 ## Analytics Dashboard
+
+An interactive dashboard built to showcase the gold layer's analytical capabilities.
+Each chart includes a toggleable SQL snippet showing the exact query used to produce it.
+
 [View live dashboard →](https://zkhechadoorian.github.io/healthcare-data-warehouse/)
 
-![](assets/dashboard.jpg)
+### Chronic disease prevalence by gender
+
+Compares prevalence rates across 8 chronic conditions between male and female
+beneficiaries. Rates (not raw counts) are used to account for the unequal population
+sizes (64K female vs 52K male). Depression shows the largest gap at 4.2 percentage
+points; cancer is identical at 13.6% for both groups.
+
+![Chronic disease prevalence by gender](assets/dashboard_1.jpg)
+
+### Chronic disease prevalence by age group
+
+Buckets 116K beneficiaries into six age groups and plots each condition as a trend
+line. Every condition rises with age — with one exception: the 65–69 group shows the
+lowest rates across the board, likely a survivorship effect as the newly Medicare-eligible
+cohort skews healthier before disease accumulates. COPD shows the steepest climb
+(25.7% → 34.1%), consistent with its cumulative nature.
+
+![Chronic disease prevalence by age group](assets/dashboard_2.jpg)
 
 ---
 
