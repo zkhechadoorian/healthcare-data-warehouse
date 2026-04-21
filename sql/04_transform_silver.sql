@@ -618,6 +618,34 @@ ON CONFLICT (pde_id) DO NOTHING;
 --             Dates in this dataset are ISO format (YYYY-MM-DD), not YYYYMMDD.
 -- =============================================================================
 
+WITH transformed AS (
+    SELECT
+        ROW_NUMBER() OVER () AS encounter_id,
+        NULLIF(TRIM(name), '') AS patient_name,
+        silver.safe_smallint(age) AS patient_age,
+        NULLIF(TRIM(gender), '') AS patient_gender,
+        NULLIF(TRIM(blood_type), '') AS blood_type,
+        NULLIF(TRIM(medical_condition), '') AS medical_condition,
+        CASE
+            WHEN date_of_admission IS NULL OR TRIM(date_of_admission) = '' THEN NULL
+            ELSE TRIM(date_of_admission)::DATE
+        END AS admission_dt,
+        CASE
+            WHEN discharge_date IS NULL OR TRIM(discharge_date) = '' THEN NULL
+            ELSE TRIM(discharge_date)::DATE
+        END AS discharge_dt,
+        NULLIF(TRIM(admission_type), '') AS admission_type,
+        silver.safe_smallint(room_number) AS room_number,
+        NULLIF(TRIM(doctor), '') AS doctor,
+        NULLIF(TRIM(hospital), '') AS hospital,
+        NULLIF(TRIM(insurance_provider), '') AS insurance_provider,
+        silver.safe_numeric(billing_amount, TRUE) AS billing_amt,
+        NULLIF(TRIM(medication), '') AS medication,
+        NULLIF(TRIM(test_results), '') AS test_results,
+        NOW() AS _loaded_at,
+        MD5(ROW(name, age, gender, date_of_admission, discharge_date, medical_condition, hospital, billing_amount)::TEXT) AS _row_hash
+    FROM staging.kaggle_encounters
+)
 INSERT INTO silver.kaggle_encounters (
     encounter_id,
     patient_name, patient_age, patient_gender, blood_type,
@@ -627,44 +655,7 @@ INSERT INTO silver.kaggle_encounters (
     medication, test_results,
     _loaded_at, _row_hash
 )
-SELECT
-    ROW_NUMBER() OVER ()                                      AS encounter_id,
-
-    NULLIF(TRIM(name),              '')                       AS patient_name,
-    silver.safe_smallint(age)                                 AS patient_age,
-    NULLIF(TRIM(gender),            '')                       AS patient_gender,
-    NULLIF(TRIM(blood_type),        '')                       AS blood_type,
-
-    NULLIF(TRIM(medical_condition), '')                       AS medical_condition,
-
-    CASE
-        WHEN date_of_admission IS NULL OR TRIM(date_of_admission) = '' THEN NULL
-        ELSE TRIM(date_of_admission)::DATE
-    END                                                       AS admission_dt,
-    CASE
-        WHEN discharge_date IS NULL OR TRIM(discharge_date) = '' THEN NULL
-        ELSE TRIM(discharge_date)::DATE
-    END                                                       AS discharge_dt,
-
-    NULLIF(TRIM(admission_type),    '')                       AS admission_type,
-    silver.safe_smallint(room_number)                         AS room_number,
-
-    NULLIF(TRIM(doctor),            '')                       AS doctor,
-    NULLIF(TRIM(hospital),          '')                       AS hospital,
-    NULLIF(TRIM(insurance_provider),'')                       AS insurance_provider,
-    silver.safe_numeric(billing_amount, TRUE)                 AS billing_amt,
-
-    NULLIF(TRIM(medication),        '')                       AS medication,
-    NULLIF(TRIM(test_results),      '')                       AS test_results,
-
-    NOW()                                                     AS _loaded_at,
-    MD5(ROW(
-        name, age, gender,
-        date_of_admission, discharge_date,
-        medical_condition, hospital, billing_amount
-    )::TEXT)                                                  AS _row_hash
-
-FROM staging.kaggle_encounters
+SELECT * FROM transformed
 ON CONFLICT (encounter_id) DO NOTHING;
 
 
