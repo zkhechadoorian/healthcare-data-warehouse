@@ -17,6 +17,12 @@ Each chart includes a toggleable SQL snippet showing the exact query used to pro
 
 [View live dashboard →](https://zkhechadoorian.github.io/healthcare-data-warehouse/)
 
+### 30-day readmission rate by diagnosis
+
+Tracks 30-day readmission rates across the 5 most common admitting diagnoses (by inpatient volume) for 2008–2010. Heart failure (ICD-9: 4280) had the highest readmission rate in both 2008 (21.45%) and 2009 (11.03%), but by 2010 it had fallen to 7.49% — tied with syncope (7802) for the highest rate that year. Notably, every diagnosis in the top 5 saw a consistent decline in readmission rates across all three years, suggesting improving care patterns or changes in coding practice over the period.
+
+![30-day readmission rate by diagnosis](assets/readmission.jpg)
+
 ### Chronic disease prevalence by gender
 
 Compares prevalence rates across 8 chronic conditions between male and female
