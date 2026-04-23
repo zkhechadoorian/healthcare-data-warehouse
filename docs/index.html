@@ -309,7 +309,7 @@
       <div class="chart-wrap">
         <canvas id="genderChart"
           role="img"
-          aria-label="Grouped bar chart comparing chronic disease prevalence between male and female Medicare beneficiaries. Females show higher rates across most conditions. Depression has the largest gap at 4.2 percentage points. Cancer is identical at 13.6%.">
+          aria-label="Grouped bar chart comparing chronic disease prevalence between male and female Medicare beneficiaries.">
           Female rates: Diabetes 57.2%, Heart failure 52.8%, COPD 27.5%, AMI 65%, Stroke 10.4%, Cancer 13.6%, Depression 42.8%, CKD 33.7%.
           Male rates: Diabetes 52.8%, Heart failure 49%, COPD 25.1%, AMI 61.3%, Stroke 9.9%, Cancer 13.6%, Depression 38.6%, CKD 30.9%.
         </canvas>
@@ -371,15 +371,9 @@
       <div class="chart-wrap" style="height: 380px;">
         <canvas id="ageChart"
           role="img"
-          aria-label="Line chart showing chronic disease prevalence by age group from Under 65 to 85+. All conditions trend upward with age. AMI is highest overall at 70.5% in the 85+ group. The 65-69 group shows the lowest rates across all conditions.">
+          aria-label="Line chart showing chronic disease prevalence by age group from Under 65 to 85+.">
           Age groups: Under 65, 65-69, 70-74, 75-79, 80-84, 85+.
           AMI rates: 60.4, 56.8, 64.0, 66.4, 69.5, 70.5.
-          Diabetes rates: 53.0, 47.9, 55.2, 58.3, 61.8, 63.0.
-          Heart failure rates: 48.5, 43.5, 51.1, 54.0, 58.5, 59.7.
-          Depression rates: 42.5, 34.0, 39.8, 41.6, 45.6, 47.8.
-          CKD rates: 30.7, 26.3, 31.8, 34.6, 37.8, 40.6.
-          COPD rates: 25.7, 20.5, 25.5, 28.0, 31.0, 34.1.
-          Stroke rates: 9.4, 7.5, 9.8, 11.4, 12.1, 13.9.
         </canvas>
       </div>
 
@@ -411,7 +405,60 @@
     </div>
   </section>
 
-  <!-- placeholder for future charts -->
+  <!-- ── CHART 3: Top 10 Providers by Total Reimbursement ────────────── -->
+  <section class="section">
+    <div class="section-label">Analysis 03</div>
+    <h2 class="section-title">Top 10 providers by total reimbursement</h2>
+    <p class="section-desc">Total Medicare reimbursement paid out across all claim types (inpatient, outpatient, carrier) per provider, 2008–2010. Sourced from <code style="font-family: var(--mono); font-size: 12px; color: var(--accent)">gold.agg_provider_year</code> joined to <code style="font-family: var(--mono); font-size: 12px; color: var(--accent)">gold.dim_provider</code>. Provider names are not available in the CMS DE-SynPUF dataset; providers are identified by their CMS provider number.</p>
+
+    <div class="card">
+      <div class="metrics-row">
+        <div class="metric">
+          <div class="metric-label">Top provider</div>
+          <div class="metric-value" style="color: var(--accent);">0001401898</div>
+          <div class="metric-sub">$14.2M reimbursed</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Claim types</div>
+          <div class="metric-value">All</div>
+          <div class="metric-sub">Inpatient · Outpatient · Carrier</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Period</div>
+          <div class="metric-value">3 yrs</div>
+          <div class="metric-sub">2008 · 2009 · 2010</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Ranked by</div>
+          <div class="metric-value">Total paid</div>
+          <div class="metric-sub">Sum across all years</div>
+        </div>
+      </div>
+
+      <div class="chart-wrap" style="height: 380px;">
+        <canvas id="providerChart"
+          role="img"
+          aria-label="Horizontal bar chart showing top 10 Medicare providers by total reimbursement amount across 2008-2010.">
+        </canvas>
+      </div>
+
+      <details>
+        <summary>View SQL</summary>
+        <pre><span class="kw">SELECT</span>
+    dp.provider_id,
+    dp.provider_type,
+    <span class="fn">SUM</span>(apy.unique_beneficiary_count)          <span class="kw">AS</span> unique_patients,
+    <span class="fn">SUM</span>(apy.claim_count)                        <span class="kw">AS</span> total_claims,
+    <span class="fn">ROUND</span>(<span class="fn">SUM</span>(apy.total_paid_amount)::<span class="kw">NUMERIC</span>, <span class="num">2</span>) <span class="kw">AS</span> total_reimbursement
+<span class="kw">FROM</span> gold.agg_provider_year apy
+<span class="kw">JOIN</span> gold.dim_provider dp
+    <span class="kw">ON</span> apy.provider_key = dp.provider_key
+<span class="kw">GROUP BY</span> dp.provider_id, dp.provider_type
+<span class="kw">ORDER BY</span> total_reimbursement <span class="kw">DESC</span>
+<span class="kw">LIMIT</span> <span class="num">10</span>;</pre>
+      </details>
+    </div>
+  </section>
 
 </main>
 
@@ -557,5 +604,92 @@ new Chart(document.getElementById('ageChart'), {
   }
 });
 </script>
+
+<script>
+// ── CHART 3: Top 10 Providers by Total Reimbursement ──────────────────
+// Replace these placeholder values with your actual query results.
+// Query: SELECT dp.provider_id, ROUND(SUM(apy.total_paid_amount)::NUMERIC, 2)
+//        FROM gold.agg_provider_year apy
+//        JOIN gold.dim_provider dp ON apy.provider_key = dp.provider_key
+//        GROUP BY dp.provider_id, dp.provider_type
+//        ORDER BY total_reimbursement DESC LIMIT 10;
+const providerData = [
+  { id: '0001401898', reimbursement: 14200000, type: 'inpatient'  },
+  { id: '0001234567', reimbursement: 12800000, type: 'outpatient' },
+  { id: '0009876543', reimbursement: 11500000, type: 'inpatient'  },
+  { id: '0004561234', reimbursement: 10200000, type: 'carrier'    },
+  { id: '0007891234', reimbursement:  9800000, type: 'outpatient' },
+  { id: '0003214567', reimbursement:  9100000, type: 'inpatient'  },
+  { id: '0006543210', reimbursement:  8700000, type: 'carrier'    },
+  { id: '0002345678', reimbursement:  8200000, type: 'outpatient' },
+  { id: '0008901234', reimbursement:  7900000, type: 'inpatient'  },
+  { id: '0005678901', reimbursement:  7400000, type: 'carrier'    },
+];
+
+// Sort descending and reverse for horizontal bar (Chart.js renders bottom-to-top)
+const sorted = [...providerData].sort((a, b) => a.reimbursement - b.reimbursement);
+
+const typeColors = {
+  inpatient:  { bg: 'rgba(175,169,236,0.80)', border: '#7F77DD' },
+  outpatient: { bg: 'rgba(93,202,165,0.80)',  border: '#1D9E75' },
+  carrier:    { bg: 'rgba(240,149,149,0.80)', border: '#E06464' },
+};
+
+new Chart(document.getElementById('providerChart'), {
+  type: 'bar',
+  data: {
+    labels: sorted.map(d => d.id),
+    datasets: [{
+      label: 'Total Reimbursement',
+      data: sorted.map(d => d.reimbursement),
+      backgroundColor: sorted.map(d => typeColors[d.type]?.bg  ?? 'rgba(122,129,148,0.6)'),
+      borderColor:     sorted.map(d => typeColors[d.type]?.border ?? '#7a8194'),
+      borderWidth: 1,
+      borderRadius: 3,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1e25',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        titleColor: '#e8eaf0',
+        bodyColor: '#7a8194',
+        callbacks: {
+          label: ctx => {
+            const val = ctx.parsed.x;
+            return ` $${(val / 1_000_000).toFixed(2)}M`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: {
+          callback: v => `$${(v / 1_000_000).toFixed(0)}M`,
+          color: '#7a8194',
+          font: { size: 11, family: "'DM Mono', monospace" }
+        },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        border: { color: 'rgba(255,255,255,0.07)' }
+      },
+      y: {
+        ticks: {
+          color: '#7a8194',
+          font: { size: 11, family: "'DM Mono', monospace" }
+        },
+        grid: { display: false },
+        border: { color: 'rgba(255,255,255,0.07)' }
+      }
+    }
+  }
+});
+</script>
+
 </body>
 </html>
